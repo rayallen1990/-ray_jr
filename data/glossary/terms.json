@@ -1,0 +1,14 @@
+[
+  {
+    "term": "HMI",
+    "full_name": "Human Machine Interface",
+    "chinese": "人机界面",
+    "definition": "工业控制系统中用于人机交互的显示和操作设备"
+  },
+  {
+    "term": "TK",
+    "full_name": "Touch Kernel",
+    "chinese": "触摸屏系列",
+    "definition": "繁易 HMI 产品系列代号，如 TK6070iH"
+  }
+]
