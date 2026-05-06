@@ -6,6 +6,7 @@ that can be included in the main FastAPI application.
 
 from fastapi import APIRouter
 from app.api.v1 import chat
+from app.api.v1 import documents
 
 # Create main API router for v1
 api_router = APIRouter()
@@ -13,9 +14,5 @@ api_router = APIRouter()
 # Include chat router
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 
-# Include sub-routers here as they are created
-# Example:
-# from app.api.v1.endpoints import auth, documents, search
-# api_router.include_router(auth.router, prefix="/auth", tags=["authentication"])
-# api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
-# api_router.include_router(search.router, prefix="/search", tags=["search"])
+# Include documents router
+api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
