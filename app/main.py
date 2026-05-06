@@ -3,10 +3,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+import os
 
 from app.config import settings
 from app.database import engine, Base
 from app.kb_sync import sync_knowledge_base
+from app.api.v1 import api_router
 
 # Create FastAPI application
 app = FastAPI(
@@ -70,6 +73,15 @@ async def health_check():
             "version": settings.app_version
         }
     )
+
+
+# Register API routers
+app.include_router(api_router, prefix="/api/v1")
+
+# Mount static files
+static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 # TODO: Register API routers

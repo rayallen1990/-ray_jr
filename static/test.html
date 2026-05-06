@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ray_jr 知识库测试</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .status {
+            background: #f0f9ff;
+            border-left: 4px solid #0ea5e9;
+            padding: 15px;
+            margin-bottom: 30px;
+            border-radius: 4px;
+        }
+        .status-title {
+            font-weight: 600;
+            color: #0369a1;
+            margin-bottom: 8px;
+        }
+        .status-item {
+            font-size: 13px;
+            color: #666;
+            margin: 4px 0;
+        }
+        .chat-box {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            min-height: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+            background: #f9fafb;
+        }
+        .message {
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+        .message.user {
+            background: #667eea;
+            color: white;
+            margin-left: auto;
+        }
+        .message.assistant {
+            background: white;
+            border: 1px solid #e5e7eb;
+        }
+        .message-label {
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            opacity: 0.7;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        button {
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Ray_jr 知识库测试</h1>
+        <p class="subtitle">HMI 工业控制知识库对话系统</p>
+
+        <div class="status" id="status">
+            <div class="status-title">系统状态</div>
+            <div class="status-item">正在加载...</div>
+        </div>
+
+        <div class="chat-box" id="chatBox">
+            <div class="message assistant">
+                <div class="message-label">助手</div>
+                <div>您好！我是 Ray_jr 知识库助手。请问有什么关于 HMI 组态软件的问题吗？</div>
+            </div>
+        </div>
+
+        <div class="input-group">
+            <input type="text" id="questionInput" placeholder="输入您的问题..." />
+            <button onclick="sendQuestion()" id="sendBtn">发送</button>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin + '/api/v1';
+
+        // Load status on page load
+        async function loadStatus() {
+            try {
+                const res = await fetch(`${API_BASE}/chat/status`);
+                const data = await res.json();
+                const statusDiv = document.getElementById('status');
+                statusDiv.innerHTML = `
+                    <div class="status-title">系统状态</div>
+                    <div class="status-item">📄 已上传文档: ${data.documents_uploaded} 个</div>
+                    <div class="status-item">🔧 RAG 引擎: ${data.rag_engine === 'not_integrated' ? '开发中' : '已集成'}</div>
+                    <div class="status-item">🗄️ 向量库: ${data.vector_store === 'not_initialized' ? '未初始化' : '已就绪'}</div>
+                `;
+            } catch (err) {
+                console.error('Failed to load status:', err);
+            }
+        }
+
+        async function sendQuestion() {
+            const input = document.getElementById('questionInput');
+            const question = input.value.trim();
+            if (!question) return;
+
+            const chatBox = document.getElementById('chatBox');
+            const sendBtn = document.getElementById('sendBtn');
+
+            // Add user message
+            chatBox.innerHTML += `
+                <div class="message user">
+                    <div class="message-label">您</div>
+                    <div>${question}</div>
+                </div>
+            `;
+
+            input.value = '';
+            sendBtn.disabled = true;
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Show loading
+            chatBox.innerHTML += '<div class="loading">正在思考...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/chat/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question, tenant_id: 'test-tenant' })
+                });
+
+                const data = await res.json();
+
+                // Remove loading
+                chatBox.querySelector('.loading').remove();
+
+                // Add assistant response
+                chatBox.innerHTML += `
+                    <div class="message assistant">
+                        <div class="message-label">助手</div>
+                        <div>${data.answer.replace(/\n/g, '<br>')}</div>
+                        ${data.sources.length > 0 ? `<div style="margin-top:8px;font-size:12px;opacity:0.7">📚 来源: ${data.sources.join(', ')}</div>` : ''}
+                    </div>
+                `;
+            } catch (err) {
+                chatBox.querySelector('.loading').remove();
+                chatBox.innerHTML += `
+                    <div class="message assistant">
+                        <div class="message-label">助手</div>
+                        <div>抱歉，发生错误：${err.message}</div>
+                    </div>
+                `;
+            }
+
+            sendBtn.disabled = false;
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // Allow Enter key to send
+        document.getElementById('questionInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendQuestion();
+        });
+
+        // Load status on page load
+        loadStatus();
+    </script>
+</body>
+</html>

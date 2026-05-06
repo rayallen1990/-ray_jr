@@ -5,9 +5,13 @@ that can be included in the main FastAPI application.
 """
 
 from fastapi import APIRouter
+from app.api.v1 import chat
 
 # Create main API router for v1
 api_router = APIRouter()
+
+# Include chat router
+api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 
 # Include sub-routers here as they are created
 # Example:
