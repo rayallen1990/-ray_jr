@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.database import engine, Base
+from app.kb_sync import sync_knowledge_base
 
 # Create FastAPI application
 app = FastAPI(
@@ -30,6 +31,14 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on application startup"""
+    # Sync knowledge base from external repository
+    if settings.knowledge_base_auto_sync:
+        print("📚 Syncing knowledge base...")
+        if sync_knowledge_base():
+            print("✓ Knowledge base synced")
+        else:
+            print("⚠ Knowledge base sync failed (will use local data)")
+
     # Create database tables
     Base.metadata.create_all(bind=engine)
     print(f"🚀 {settings.app_name} v{settings.app_version} started")

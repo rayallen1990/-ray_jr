@@ -49,6 +49,24 @@ class Settings(BaseSettings):
     rag_max_context_tokens: int = Field(default=100000, description="Max context window")
     rag_top_k: int = Field(default=5, description="Number of documents to retrieve")
 
+    # Knowledge Base Repository
+    knowledge_base_repo: str = Field(
+        default="https://github.com/rayallen1990/-ray_jr-knowledge-base.git",
+        description="Git repository URL for knowledge base data"
+    )
+    knowledge_base_path: str = Field(
+        default="./data",
+        description="Local path to clone/sync knowledge base"
+    )
+    knowledge_base_branch: str = Field(
+        default="main",
+        description="Branch to use from knowledge base repo"
+    )
+    knowledge_base_auto_sync: bool = Field(
+        default=True,
+        description="Auto sync knowledge base on startup"
+    )
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
