@@ -64,7 +64,7 @@ cp -r -ray_jr/skills/ray-jr-kb CowAgent/skills/
 3. 安装 Skill 依赖：
 ```bash
 cd CowAgent
-pip install pymupdf python-docx qdrant-client anthropic sentence-transformers redis
+pip install pymupdf python-docx qdrant-client anthropic sentence-transformers redis pydantic-settings python-dotenv
 ```
 
 4. 配置 CowAgent 的 `config.json`，启用 ray-jr-kb Skill：

@@ -1,12 +1,16 @@
 """CowAgent Skill handler for Ray-JR Knowledge Base.
 
-Implements the /kb upload command: receives file attachments from CowAgent
-context, parses documents, chunks text, generates embeddings, and indexes
-into the user's tenant-isolated Qdrant namespace.
+Implements all /kb commands:
+  /kb ask <question>  — RAG-based knowledge base Q&A
+  /kb upload          — Upload documents (with file attachments)
+  /kb list            — List uploaded documents
+  /kb status          — Knowledge base status
+  /kb sync            — Sync from Git repository
 """
 
 import logging
 import os
+import time
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -14,9 +18,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from tools.document_parser import parse_pdf, parse_word, chunk_text
-from tools.embedding import embed_batch
+from tools.embedding import embed_batch, embed_text
 from tools.tenant_mapper import resolve_tenant, TenantInfo
-from tools.vector_store import init_qdrant, index_documents
+from tools.vector_store import init_qdrant, index_documents, search_documents
+from tools.rag_engine import rag_query
 
 logger = logging.getLogger(__name__)
 
@@ -370,3 +375,316 @@ async def handle_kb_upload(context: Dict[str, Any]) -> str:
         reply.add("未成功处理任何文件。")
 
     return reply.render()
+
+
+# ---------------------------------------------------------------------------
+# /kb ask — RAG question answering
+# ---------------------------------------------------------------------------
+
+
+async def handle_kb_ask(context: Dict[str, Any]) -> str:
+    """Handle the ``/kb ask <question>`` command.
+
+    Embeds the question, retrieves relevant documents from the user's
+    namespace, and generates an answer via Claude API.
+    """
+    try:
+        tenant_info = resolve_tenant(context)
+    except ValueError as exc:
+        return f"❌ 无法识别用户身份：{exc}"
+
+    msg: Any = context.get("msg")
+    if msg is None:
+        return "❌ 无法读取消息内容"
+
+    content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+    # Extract question: strip "/kb ask " prefix
+    question = content.strip()
+    for prefix in ("/kb ask ", "/kb ask"):
+        if question.lower().startswith(prefix):
+            question = question[len(prefix):].strip()
+            break
+
+    if not question:
+        return "请提供问题。用法：/kb ask <你的问题>"
+
+    namespace = tenant_info.namespace
+    init_qdrant(host=QDRANT_HOST, port=QDRANT_PORT)
+
+    start_time = time.time()
+
+    try:
+        result = await rag_query(
+            question=question,
+            namespace=namespace,
+            embed_fn=embed_text,
+        )
+    except RuntimeError as e:
+        return f"❌ {e}"
+    except ConnectionError:
+        return "❌ 无法连接到后端服务，请检查服务状态后重试。"
+    except Exception as e:
+        logger.error("Error in /kb ask: %s", e, exc_info=True)
+        return f"❌ 处理问题时发生错误：{type(e).__name__}: {e}"
+
+    elapsed = time.time() - start_time
+    answer = result.get("answer", "")
+    sources = result.get("sources", [])
+
+    lines = [answer, ""]
+    if sources:
+        lines.append("参考来源：")
+        for i, src in enumerate(sources, 1):
+            lines.append(f"  [{i}] {src}")
+    lines.append("")
+    lines.append(f"（耗时 {elapsed:.1f}s）")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# /kb list — List uploaded documents
+# ---------------------------------------------------------------------------
+
+
+async def handle_kb_list(context: Dict[str, Any]) -> str:
+    """Handle the ``/kb list`` command.
+
+    Queries Qdrant for all unique documents in the user's namespace.
+    """
+    try:
+        tenant_info = resolve_tenant(context)
+    except ValueError as exc:
+        return f"❌ 无法识别用户身份：{exc}"
+
+    namespace = tenant_info.namespace
+    init_qdrant(host=QDRANT_HOST, port=QDRANT_PORT)
+
+    try:
+        # Search with a zero vector to get all docs (scroll approach)
+        # We use search_documents with a dummy query to list metadata
+        docs = await search_documents(
+            query_vector=[0.0] * 1536,
+            namespace=namespace,
+            top_k=100,
+        )
+    except Exception as e:
+        logger.error("Error listing documents: %s", e)
+        return f"❌ 查询知识库失败：{e}"
+
+    if not docs:
+        return "📚 你的知识库为空。\n\n使用 `/kb upload` 上传文档，或 `/kb sync` 从仓库同步。"
+
+    # Group by doc_id to get unique documents
+    doc_map: Dict[str, Dict[str, Any]] = {}
+    for doc in docs:
+        meta = doc.get("metadata", {}) if isinstance(doc, dict) else getattr(doc, "metadata", {})
+        doc_id = meta.get("doc_id", "unknown")
+        if doc_id not in doc_map:
+            doc_map[doc_id] = {
+                "filename": meta.get("filename", "未知文件"),
+                "total_chunks": meta.get("total_chunks", 1),
+                "uploaded_at": meta.get("uploaded_at", ""),
+            }
+
+    lines = ["📚 你的知识库文档：", ""]
+    total_chunks = 0
+    for i, (doc_id, info) in enumerate(doc_map.items(), 1):
+        date_str = info["uploaded_at"][:10] if info["uploaded_at"] else "未知"
+        lines.append(f"{i}. {info['filename']} — {info['total_chunks']} 片段 — {date_str}")
+        total_chunks += info["total_chunks"]
+
+    lines.append("")
+    lines.append(f"共 {len(doc_map)} 个文档，{total_chunks} 个片段")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# /kb status — Knowledge base status
+# ---------------------------------------------------------------------------
+
+
+async def handle_kb_status(context: Dict[str, Any]) -> str:
+    """Handle the ``/kb status`` command.
+
+    Reports knowledge base connection status and statistics.
+    """
+    try:
+        tenant_info = resolve_tenant(context)
+    except ValueError as exc:
+        return f"❌ 无法识别用户身份：{exc}"
+
+    namespace = tenant_info.namespace
+    init_qdrant(host=QDRANT_HOST, port=QDRANT_PORT)
+
+    lines = ["📊 知识库状态：", ""]
+
+    # Check Qdrant connectivity
+    try:
+        from qdrant_client import QdrantClient
+        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+        collections = client.get_collections().collections
+        col_names = [c.name for c in collections]
+        has_namespace = namespace in col_names
+
+        if has_namespace:
+            info = client.get_collection(namespace)
+            lines.append(f"- 状态：正常运行")
+            lines.append(f"- 文档片段数：{info.points_count}")
+            lines.append(f"- 向量维度：{info.config.params.vectors.size}")
+        else:
+            lines.append("- 状态：正常运行（命名空间为空）")
+            lines.append("- 文档片段数：0")
+    except Exception as e:
+        lines.append(f"- 状态：❌ 连接失败 ({e})")
+
+    lines.append(f"- 存储命名空间：{namespace}")
+    lines.append(f"- Qdrant 地址：{QDRANT_HOST}:{QDRANT_PORT}")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# /kb sync — Sync from Git repository
+# ---------------------------------------------------------------------------
+
+
+async def handle_kb_sync(context: Dict[str, Any]) -> str:
+    """Handle the ``/kb sync`` command.
+
+    Pulls latest documents from the configured Git repository and indexes
+    new/modified files into the user's namespace.
+    """
+    try:
+        tenant_info = resolve_tenant(context)
+    except ValueError as exc:
+        return f"❌ 无法识别用户身份：{exc}"
+
+    namespace = tenant_info.namespace
+    reply = Reply()
+    reply.add("🔄 正在同步知识库仓库...")
+
+    try:
+        from app.kb_sync import KnowledgeBaseSync
+        syncer = KnowledgeBaseSync()
+        result = syncer.sync()
+    except ImportError:
+        return "❌ 同步模块未安装，请检查部署配置。"
+    except Exception as e:
+        logger.error("Sync failed: %s", e, exc_info=True)
+        return f"❌ 同步失败：{e}"
+
+    if not result.success:
+        return f"❌ 同步失败：{result.error}"
+
+    new_files = result.new_files or []
+    if not new_files:
+        reply.add("✅ 同步完成，没有新文件需要索引。")
+        return reply.render()
+
+    reply.add(f"发现 {len(new_files)} 个新/修改文件，正在索引...")
+
+    # Index new files
+    init_qdrant(host=QDRANT_HOST, port=QDRANT_PORT)
+    indexed_count = 0
+    from app.kb_sync import KnowledgeBaseSync
+    syncer = KnowledgeBaseSync()
+    base_path = syncer.local_path
+
+    for filepath in new_files:
+        full_path = str(base_path / filepath)
+        ext = Path(filepath).suffix.lower()
+        if ext not in SUPPORTED_EXTENSIONS:
+            continue
+
+        try:
+            text = await _parse_file(full_path, ext)
+            if not text or not text.strip():
+                continue
+            chunks = await chunk_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
+            if not chunks:
+                continue
+
+            vectors = await embed_batch(chunks)
+            doc_id = uuid.uuid4().hex[:12]
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            vector_docs = []
+            for idx, (chunk, vector) in enumerate(zip(chunks, vectors)):
+                vector_docs.append({
+                    "id": f"{doc_id}_{idx}",
+                    "text": chunk,
+                    "vector": vector,
+                    "metadata": {
+                        "doc_id": doc_id,
+                        "filename": filepath,
+                        "chunk_index": idx,
+                        "total_chunks": len(chunks),
+                        "uploaded_at": now_iso,
+                        "tenant_id": tenant_info.tenant_id,
+                        "source": "sync",
+                    },
+                })
+
+            await index_documents(vector_docs, namespace=namespace)
+            indexed_count += 1
+        except Exception as e:
+            logger.warning("Failed to index %s: %s", filepath, e)
+
+    reply.add(f"✅ 同步完成！成功索引 {indexed_count} 个文件。")
+    return reply.render()
+
+
+# ---------------------------------------------------------------------------
+# Main command router
+# ---------------------------------------------------------------------------
+
+
+async def handle_skill(context: Dict[str, Any]) -> str:
+    """Main entry point for the ray-jr-kb CowAgent Skill.
+
+    Routes /kb subcommands to the appropriate handler.
+
+    Args:
+        context: CowAgent context dictionary.
+
+    Returns:
+        Reply string.
+    """
+    msg: Any = context.get("msg")
+    if msg is None:
+        return "❌ 无法读取消息内容"
+
+    content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+    content = content.strip()
+
+    # Parse subcommand
+    if content.lower().startswith("/kb"):
+        content = content[3:].strip()
+
+    parts = content.split(maxsplit=1)
+    subcommand = parts[0].lower() if parts else ""
+
+    if subcommand == "ask":
+        return await handle_kb_ask(context)
+    elif subcommand == "upload":
+        return await handle_kb_upload(context)
+    elif subcommand == "list":
+        return await handle_kb_list(context)
+    elif subcommand == "status":
+        return await handle_kb_status(context)
+    elif subcommand == "sync":
+        return await handle_kb_sync(context)
+    elif subcommand in ("help", ""):
+        return (
+            "知识库命令帮助：\n\n"
+            "/kb ask <问题>    — 向知识库提问\n"
+            "/kb upload        — 上传文档（附带文件）\n"
+            "/kb list          — 列出已上传文档\n"
+            "/kb status        — 查看知识库状态\n"
+            "/kb sync          — 从仓库同步知识库\n"
+            "/kb help          — 显示此帮助"
+        )
+    else:
+        return f"未知命令：/kb {subcommand}\n\n输入 /kb help 查看可用命令。"
