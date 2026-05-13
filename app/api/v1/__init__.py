@@ -5,12 +5,16 @@ that can be included in the main FastAPI application.
 """
 
 from fastapi import APIRouter
+from app.api.v1 import auth
 from app.api.v1 import chat
 from app.api.v1 import documents
 from app.api.v1 import skill_handler
 
 # Create main API router for v1
 api_router = APIRouter()
+
+# Include auth router
+api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 
 # Include chat router
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])

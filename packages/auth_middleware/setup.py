@@ -11,7 +11,7 @@ setup(
     install_requires=[
         "fastapi>=0.104.0",
         "python-jose[cryptography]>=3.3.0",
-        "passlib[bcrypt]>=1.7.4",
+        "bcrypt>=4.0.0",
         "pydantic>=2.0.0",
         "python-multipart>=0.0.6",
     ],
