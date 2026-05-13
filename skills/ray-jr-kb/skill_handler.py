@@ -22,6 +22,7 @@ from tools.embedding import embed_batch, embed_text
 from tools.tenant_mapper import resolve_tenant, TenantInfo
 from tools.vector_store import init_qdrant, index_documents, search_documents
 from tools.rag_engine import rag_query
+from tools.query_rewriter import rewrite_query
 
 logger = logging.getLogger(__name__)
 
@@ -413,9 +414,12 @@ async def handle_kb_ask(context: Dict[str, Any]) -> str:
 
     start_time = time.time()
 
+    # Query rewrite for better retrieval
+    search_query = await rewrite_query(question)
+
     try:
         result = await rag_query(
-            question=question,
+            question=search_query,
             namespace=namespace,
             embed_fn=embed_text,
         )
