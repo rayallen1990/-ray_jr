@@ -44,8 +44,14 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field(default="", description="Anthropic API key for Claude")
     openai_api_key: str = Field(default="", description="OpenAI API key")
 
+    # LLM Provider Configuration
+    llm_provider: str = Field(default="deepseek", description="LLM provider: deepseek / openai / anthropic")
+    llm_api_key: str = Field(default="", description="Unified LLM API key")
+    llm_base_url: str = Field(default="https://api.deepseek.com", description="LLM API base URL")
+    llm_model: str = Field(default="deepseek-chat", description="LLM model name")
+
     # RAG Engine
-    rag_model: str = Field(default="claude-sonnet-4.5", description="LLM model for RAG")
+    rag_model: str = Field(default="deepseek-chat", description="LLM model for RAG")
     rag_max_context_tokens: int = Field(default=100000, description="Max context window")
     rag_top_k: int = Field(default=5, description="Number of documents to retrieve")
 

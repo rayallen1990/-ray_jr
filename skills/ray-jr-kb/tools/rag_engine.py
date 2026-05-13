@@ -17,7 +17,9 @@ _engine: Optional[RagEngine] = None
 def _init_engine(
     vector_store: QdrantVectorStore,
     api_key: str,
-    model: str = "claude-sonnet-4-5-20250929",
+    model: str = "deepseek-chat",
+    base_url: str = "https://api.deepseek.com",
+    provider: str = "deepseek",
     top_k: int = 5,
 ) -> RagEngine:
     """Initialize the RAG engine with given configuration."""
@@ -26,9 +28,11 @@ def _init_engine(
         vector_store=vector_store,
         api_key=api_key,
         model=model,
+        base_url=base_url,
+        provider=provider,
         top_k=top_k,
     )
-    logger.info("RAG engine initialized (model=%s, top_k=%d)", model, top_k)
+    logger.info("RAG engine initialized (provider=%s, model=%s, top_k=%d)", provider, model, top_k)
     return _engine
 
 
@@ -38,7 +42,9 @@ async def rag_query(
     embed_fn: Callable[[str], List[float]],
     vector_store: Optional[QdrantVectorStore] = None,
     api_key: Optional[str] = None,
-    model: str = "claude-sonnet-4-5-20250929",
+    model: str = "deepseek-chat",
+    base_url: str = "https://api.deepseek.com",
+    provider: str = "deepseek",
     top_k: int = 5,
 ) -> dict:
     """Execute a RAG query: retrieve relevant docs and generate an answer.
@@ -48,16 +54,14 @@ async def rag_query(
         namespace: Vector store namespace (tenant isolation).
         embed_fn: Function that takes text and returns embedding vector.
         vector_store: QdrantVectorStore instance (uses cached if None).
-        api_key: Anthropic API key (uses cached engine if None).
-        model: Claude model to use (default claude-sonnet-4-5-20250929).
+        api_key: LLM API key (uses cached engine if None).
+        model: LLM model name (default deepseek-chat).
+        base_url: API base URL (default DeepSeek).
+        provider: LLM provider (deepseek/openai/anthropic).
         top_k: Number of documents to retrieve (default 5).
 
     Returns:
         Dict with 'answer' (str) and 'sources' (List[str]).
-
-    Raises:
-        ValueError: If required parameters are missing.
-        RuntimeError: If engine is not initialized and no config provided.
     """
     global _engine
 
@@ -65,7 +69,7 @@ async def rag_query(
         raise ValueError("Question cannot be empty")
 
     if vector_store and api_key:
-        _init_engine(vector_store, api_key, model=model, top_k=top_k)
+        _init_engine(vector_store, api_key, model=model, base_url=base_url, provider=provider, top_k=top_k)
     elif _engine is None:
         raise RuntimeError(
             "RAG engine not initialized. Provide vector_store and api_key, "
@@ -85,34 +89,19 @@ async def rag_stream(
     embed_fn: Callable[[str], List[float]],
     vector_store: Optional[QdrantVectorStore] = None,
     api_key: Optional[str] = None,
-    model: str = "claude-sonnet-4-5-20250929",
+    model: str = "deepseek-chat",
+    base_url: str = "https://api.deepseek.com",
+    provider: str = "deepseek",
     top_k: int = 5,
 ) -> AsyncIterator[str]:
-    """Stream a RAG answer token by token.
-
-    Args:
-        question: User question to answer.
-        namespace: Vector store namespace (tenant isolation).
-        embed_fn: Function that takes text and returns embedding vector.
-        vector_store: QdrantVectorStore instance (uses cached if None).
-        api_key: Anthropic API key (uses cached engine if None).
-        model: Claude model to use.
-        top_k: Number of documents to retrieve.
-
-    Yields:
-        Answer text tokens as they are generated.
-
-    Raises:
-        ValueError: If required parameters are missing.
-        RuntimeError: If engine is not initialized and no config provided.
-    """
+    """Stream a RAG answer token by token."""
     global _engine
 
     if not question or not question.strip():
         raise ValueError("Question cannot be empty")
 
     if vector_store and api_key:
-        _init_engine(vector_store, api_key, model=model, top_k=top_k)
+        _init_engine(vector_store, api_key, model=model, base_url=base_url, provider=provider, top_k=top_k)
     elif _engine is None:
         raise RuntimeError(
             "RAG engine not initialized. Provide vector_store and api_key."
