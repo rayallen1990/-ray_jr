@@ -468,7 +468,7 @@ async def handle_kb_list(context: Dict[str, Any]) -> str:
         # Search with a zero vector to get all docs (scroll approach)
         # We use search_documents with a dummy query to list metadata
         docs = await search_documents(
-            query_vector=[0.0] * 1536,
+            query_vector=[0.0] * 384,
             namespace=namespace,
             top_k=100,
         )
