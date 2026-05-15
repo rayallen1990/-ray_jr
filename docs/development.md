@@ -197,3 +197,30 @@ CowAgent 传递给 Skill 的 context 结构：
 - 错误处理：面向用户的错误使用中文消息
 - 异步：IO 操作使用 async/await
 - 测试：每个工具模块对应一个测试文件
+
+## Query Rewrite 模块
+
+`skills/ray-jr-kb/tools/query_rewriter.py` 在 RAG 检索前对用户 query 进行改写优化。
+
+**流程**：
+```
+用户问题 → Query Rewrite → embedding → 向量检索 → 上下文组装 → LLM 回答
+```
+
+**功能**：
+- 术语标准化：口语化表达 → 工控领域专业术语
+- 上下文补全：结合对话历史补全指代和省略
+
+**配置**：
+- `QUERY_REWRITE_ENABLED`：环境变量，设为 `false` 关闭改写（默认启用）
+- `ANTHROPIC_API_KEY`：Claude API 密钥（未设置时自动跳过改写）
+
+**使用**：
+```python
+from tools.query_rewriter import rewrite_query
+
+rewritten = await rewrite_query("变频器老报警", history=["上次讨论了西门子设备"])
+# -> "VFD 变频器故障报警代码及排除方法"
+```
+
+**容错**：改写失败时自动 fallback 到原始 query，不阻塞主流程。
