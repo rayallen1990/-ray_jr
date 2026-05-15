@@ -10,6 +10,7 @@ psycopg2-binary>=2.9.9
 
 # Authentication
 python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
 bcrypt>=4.0.0
 
 # Configuration
@@ -21,7 +22,20 @@ python-dotenv>=1.0.0
 redis>=5.0.0
 
 # LLM (OpenAI-compatible: DeepSeek, OpenAI, etc.)
-openai>=1.0.0
+openai>=1.12.0
+
+# Vector Store
+qdrant-client>=1.7.0
+
+# Embeddings
+sentence-transformers>=2.2.0
+
+# Document Parsing
+PyMuPDF>=1.23.0
+python-docx>=1.0.0
+
+# HTTP
+httpx>=0.25.0
 
 # Local packages (editable installs)
 -e ./packages/auth_middleware
